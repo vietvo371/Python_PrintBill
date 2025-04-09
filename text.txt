@@ -1,0 +1,296 @@
+import win32print
+import win32ui
+from win32con import MM_TEXT
+import win32con
+
+def chia_van_ban_thanh_dong(dc, van_ban, max_width):
+    """
+    Chia văn bản thành các dòng phù hợp với chiều rộng tối đa
+    
+    Args:
+        dc: Device context
+        van_ban: Văn bản cần chia
+        max_width: Chiều rộng tối đa cho phép
+        
+    Returns:
+        list: Danh sách các dòng văn bản đã chia
+    """
+    # Nếu văn bản rỗng, trả về một mảng có một phần tử rỗng
+    if not van_ban:
+        return [""]
+    
+    # Nếu văn bản đã nằm trong giới hạn, không cần chia
+    if dc.GetTextExtent(van_ban)[0] <= max_width:
+        return [van_ban]
+    
+    # Chia văn bản thành các từ
+    cac_tu = van_ban.split()
+    cac_dong = []
+    dong_hien_tai = ""
+    
+    for tu in cac_tu:
+        # Thêm từ vào dòng hiện tại để kiểm tra
+        dong_kiem_tra = dong_hien_tai + " " + tu if dong_hien_tai else tu
+        
+        # Nếu dòng kiểm tra vẫn nằm trong giới hạn, cập nhật dòng hiện tại
+        if dc.GetTextExtent(dong_kiem_tra)[0] <= max_width:
+            dong_hien_tai = dong_kiem_tra
+        else:
+            # Nếu dòng hiện tại đã có giá trị, thêm vào danh sách các dòng
+            if dong_hien_tai:
+                cac_dong.append(dong_hien_tai)
+            
+            # Kiểm tra xem từ đơn có vượt quá giới hạn không
+            if dc.GetTextExtent(tu)[0] <= max_width:
+                dong_hien_tai = tu
+            else:
+                # Nếu từ đơn vượt quá giới hạn, cần cắt từ
+                tu_tam = ""
+                for ky_tu in tu:
+                    if dc.GetTextExtent(tu_tam + ky_tu)[0] <= max_width:
+                        tu_tam += ky_tu
+                    else:
+                        cac_dong.append(tu_tam)
+                        tu_tam = ky_tu
+                
+                # Thêm phần còn lại của từ (nếu có)
+                if tu_tam:
+                    dong_hien_tai = tu_tam
+    
+    # Thêm dòng cuối cùng (nếu có)
+    if dong_hien_tai:
+        cac_dong.append(dong_hien_tai)
+    
+    return cac_dong
+
+def in_hoa_don_may_mac_dinh(so_ban="01", mon_an=None):
+    if mon_an is None:
+        mon_an = [{"ten": "Phở bò", "so_luong": 2, "ghi_chu": ""}]
+        
+    try:
+        # Lấy tên máy in mặc định
+        may_in_mac_dinh = win32print.GetDefaultPrinter()
+        
+        # Tạo DC cho máy in
+        hprinter = win32print.OpenPrinter(may_in_mac_dinh)
+        printer_info = win32print.GetPrinter(hprinter, 2)
+        dc = win32ui.CreateDC()
+        dc.CreatePrinterDC(may_in_mac_dinh)
+        dc.StartDoc('Hóa đơn')
+        dc.StartPage()
+        
+        # Lấy kích thước trang in
+        page_width = dc.GetDeviceCaps(win32con.PHYSICALWIDTH)
+        page_height = dc.GetDeviceCaps(win32con.PHYSICALHEIGHT)
+        
+        # Cài đặt chế độ mapping
+        dc.SetMapMode(MM_TEXT)
+        
+        # Tạo bút vẽ đậm
+        pen = win32ui.CreatePen(win32con.PS_SOLID, 5, 0)  # Tăng độ dày từ 4 lên 5
+        dc.SelectObject(pen)
+        
+        # Tạo font và màu
+        
+        # Font cho tiêu đề
+        font_tieu_de = win32ui.CreateFont({
+            "name": "Arial",
+            "height": 56,  # Tăng từ 48 lên 56
+            "weight": 700,  # Bold
+        })
+        
+        # Font cho nội dung - tăng cỡ chữ
+        font_noi_dung = win32ui.CreateFont({
+            "name": "Arial",
+            "height": 42,  # Tăng từ 36 lên 42
+            "weight": 400,  # Normal
+        })
+        
+        # Font cho header
+        font_header = win32ui.CreateFont({
+            "name": "Arial",
+            "height": 42,  # Tăng từ 36 lên 42
+            "weight": 700,  # Bold
+        })
+        
+        # Điều chỉnh lề trên của máy in
+        margin_top_adjust = -10
+        
+        col1_width = 200 
+        col2_width = 130   # Cột Số lượng
+        col3_width = 200   # Cột Ghi chú
+        row_height = 60    # Chiều cao hàng cơ bản
+        table_width = col1_width + col2_width + col3_width
+        
+        # Căn giữa bảng trong trang và giảm chiều rộng tổng thể
+        margin_percent = 0.03  # Để lại 3% lề hai bên
+        max_table_width = int(page_width * (1 - 2 * margin_percent))
+        
+        # Điều chỉnh nếu bảng vẫn quá rộng
+        if table_width > max_table_width:
+            scale_factor = max_table_width / table_width
+            col1_width = int(col1_width * scale_factor)
+            col2_width = int(col2_width * scale_factor)
+            col3_width = int(col3_width * scale_factor)
+            table_width = col1_width + col2_width + col3_width
+        
+        x_start = (page_width - table_width) // 2
+        y_start = 0  # Bắt đầu từ vị trí 0 thay vì 5
+        
+        # Vẽ tiêu đề ở giữa (đặt sát đầu trang)
+        dc.SelectObject(font_tieu_de)
+        # Tính toán độ rộng của tiêu đề để căn giữa
+        tieu_de = f"Bàn {so_ban}"
+        title_width = dc.GetTextExtent(tieu_de)[0]
+        x_title = (page_width - title_width) // 2
+        dc.TextOut(x_title, margin_top_adjust, tieu_de)  # Sử dụng margin_top_adjust
+        
+        # Tính toán tọa độ các cột
+        x_col2 = x_start + col1_width
+        x_col3 = x_col2 + col2_width
+        x_end = x_col3 + col3_width
+        
+        # Vẽ tiêu đề cột
+        dc.SelectObject(font_header)
+        
+        # Giảm khoảng cách giữa tiêu đề và bảng
+        y_header = y_start + 45  # Giảm từ 60 xuống 45
+        y_row1 = y_header + row_height
+        
+        # Vẽ khung header và dòng đầu tiên
+        # Vẽ viền ngoài của bảng (hàng header)
+        dc.MoveTo(x_start, y_header)
+        dc.LineTo(x_end, y_header)       # Viền trên
+        dc.LineTo(x_end, y_row1)         # Viền phải
+        dc.LineTo(x_start, y_row1)       # Viền dưới
+        dc.LineTo(x_start, y_header)     # Viền trái
+        
+        # Vẽ các đường chia cột trong header
+        dc.MoveTo(x_col2, y_header)
+        dc.LineTo(x_col2, y_row1)
+        dc.MoveTo(x_col3, y_header)
+        dc.LineTo(x_col3, y_row1)
+        
+        # Vẽ text header trong các ô với khoảng cách phù hợp
+        text_offset_y = 15  # Tăng từ 12 lên 15
+        text_offset_x = 12  # Tăng từ 10 lên 12
+        
+        # Text tiêu đề cho cột 1 và 3 - căn giữa
+        ten_mon_text = "Tên món"
+        ten_mon_width = dc.GetTextExtent(ten_mon_text)[0]
+        x_ten_mon = x_start + (col1_width - ten_mon_width) // 2
+        dc.TextOut(x_ten_mon, y_header + text_offset_y, ten_mon_text)
+        
+        ghi_chu_text = "G.chú"
+        ghi_chu_width = dc.GetTextExtent(ghi_chu_text)[0]
+        x_ghi_chu = x_col3 + (col3_width - ghi_chu_width) // 2
+        dc.TextOut(x_ghi_chu, y_header + text_offset_y, ghi_chu_text)
+        
+        # Text tiêu đề cho cột 2 - căn giữa
+        so_luong_text = "SL"
+        so_luong_width = dc.GetTextExtent(so_luong_text)[0]
+        x_so_luong = x_col2 + (col2_width - so_luong_width) // 2
+        dc.TextOut(x_so_luong, y_header + text_offset_y, so_luong_text)
+        
+        # Vẽ dữ liệu và khung cho mỗi hàng
+        dc.SelectObject(font_noi_dung)
+        y_current = y_row1
+        
+        # Chiều cao dòng chữ và khoảng cách giữa các dòng
+        line_height = 45  # Chiều cao mỗi dòng chữ
+        
+        # Tính toán chiều rộng tối đa cho văn bản trong mỗi cột
+        max_text_width_col1 = col1_width - 2 * text_offset_x
+        max_text_width_col3 = col3_width - 2 * text_offset_x
+        
+        for i, mon in enumerate(mon_an):
+            # Chia văn bản tên món và ghi chú thành các dòng
+            ten_mon_lines = chia_van_ban_thanh_dong(dc, mon["ten"], max_text_width_col1)
+            ghi_chu_lines = chia_van_ban_thanh_dong(dc, mon["ghi_chu"], max_text_width_col3)
+            
+            # Tính số dòng tối đa giữa tên món và ghi chú
+            max_lines = max(len(ten_mon_lines), len(ghi_chu_lines))
+            
+            # Tính chiều cao hàng dựa trên số dòng văn bản
+            current_row_height = max(row_height, max_lines * line_height + 2 * text_offset_y)
+            y_next = y_current + current_row_height
+            
+            # Vẽ khung cho hàng dữ liệu
+            dc.MoveTo(x_start, y_current)
+            dc.LineTo(x_end, y_current)      # Đã vẽ ở hàng trước, nhưng vẽ lại để đảm bảo
+            dc.LineTo(x_end, y_next)         # Viền phải
+            dc.LineTo(x_start, y_next)       # Viền dưới
+            dc.LineTo(x_start, y_current)    # Viền trái
+            
+            # Vẽ các đường chia cột trong hàng dữ liệu
+            dc.MoveTo(x_col2, y_current)
+            dc.LineTo(x_col2, y_next)
+            dc.MoveTo(x_col3, y_current)
+            dc.LineTo(x_col3, y_next)
+            
+            # Vẽ tên món trên nhiều dòng nếu cần
+            for j, line in enumerate(ten_mon_lines):
+                y_text = y_current + text_offset_y + j * line_height
+                dc.TextOut(x_start + text_offset_x, y_text, line)
+            
+            # Vẽ ghi chú trên nhiều dòng nếu cần
+            for j, line in enumerate(ghi_chu_lines):
+                y_text = y_current + text_offset_y + j * line_height
+                dc.TextOut(x_col3 + text_offset_x, y_text, line)
+            
+            # Vẽ dữ liệu cột 2 - số lượng - căn giữa (ở giữa hàng theo chiều dọc)
+            so_luong_text = str(mon["so_luong"])
+            so_luong_width = dc.GetTextExtent(so_luong_text)[0]
+            x_so_luong = x_col2 + (col2_width - so_luong_width) // 2
+            y_so_luong = y_current + (current_row_height - dc.GetTextExtent(so_luong_text)[1]) // 2
+            dc.TextOut(x_so_luong, y_so_luong, so_luong_text)
+            
+            # Chuyển đến hàng tiếp theo
+            y_current = y_next
+        
+        # Kết thúc trang và tài liệu
+        dc.EndPage()
+        dc.EndDoc()
+        
+        # Đóng máy in
+        win32print.ClosePrinter(hprinter)
+        
+        print(f"Đã in hóa đơn bàn {so_ban} qua máy in mặc định: {may_in_mac_dinh}")
+        return True
+        
+    except Exception as e:
+        print(f"Lỗi khi in hóa đơn qua máy in mặc định: {e}")
+        return False
+
+def in_hoa_don_rieng_le(so_ban="01", mon_an=None):
+    """
+    In mỗi món ăn thành một hóa đơn riêng biệt.
+    
+    Args:
+        so_ban (str): Số bàn cần in hóa đơn
+        mon_an (list): Danh sách các món ăn cần in, mỗi món là một dict
+                      với các khóa "ten", "so_luong", và "ghi_chu"
+                      
+    Returns:
+        bool: True nếu in thành công tất cả các hóa đơn, False nếu có lỗi
+    """
+    if mon_an is None:
+        mon_an = [{"ten": "Phở bò", "so_luong": 2, "ghi_chu": ""}]
+    
+    ket_qua = True
+    for mon in mon_an:
+        mon_don_le = [mon]
+        ket_qua_in = in_hoa_don_may_mac_dinh(so_ban=so_ban, mon_an=mon_don_le)
+        if not ket_qua_in:
+            ket_qua = False
+            print(f"Lỗi khi in hóa đơn cho món {mon['ten']}")
+    
+    return ket_qua
+
+if __name__ == "__main__":
+    mon_an = [
+        {"ten": "Tôm Hùm", "so_luong": 2, "ghi_chu": ""},
+    ]
+    
+    # Sử dụng hàm mới để in từng món ăn thành một hóa đơn riêng
+    in_hoa_don_rieng_le(so_ban="01", mon_an=mon_an)
